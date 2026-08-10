@@ -198,32 +198,32 @@
       <div class="row2">
         <div class="field">
           <label for="fJob">Job</label>
-          <input id="fJob" type="text" placeholder="เช่น J-1042" list="jobList">
+          <input id="fJob" type="text" placeholder="เช่น J-1042" list="jobList" autocomplete="off">
           <datalist id="jobList"></datalist>
         </div>
         <div class="field">
           <label for="fSuffix">Suffix</label>
-          <input id="fSuffix" type="text" placeholder="เช่น A">
+          <input id="fSuffix" type="text" placeholder="เช่น A" autocomplete="off">
         </div>
       </div>
       <div class="field">
         <label for="fItem">Item (Auto)</label>
-        <input id="fItem" type="text" placeholder="พิมพ์ Job + Suffix เพื่อดึงชื่อชิ้นงานอัตโนมัติ">
+        <input id="fItem" type="text" placeholder="พิมพ์ Job + Suffix เพื่อดึงชื่อชิ้นงานอัตโนมัติ" autocomplete="off">
         <div class="hint" id="itemHint"></div>
       </div>
       <div class="row2">
         <div class="field">
           <label for="fMachine">Machine</label>
-          <input id="fMachine" type="text" placeholder="เช่น IMM-05">
+          <input id="fMachine" type="text" placeholder="เช่น IMM-05" autocomplete="off">
         </div>
         <div class="field">
           <label for="fEmployee">Employee</label>
-          <input id="fEmployee" type="text" placeholder="ชื่อพนักงาน">
+          <input id="fEmployee" type="text" placeholder="ชื่อพนักงาน" autocomplete="off">
         </div>
       </div>
       <div class="field std">
         <label for="fStd">Cycle Time STD (วินาที/ชิ้น) — Auto</label>
-        <input id="fStd" type="number" min="0.1" step="0.1" placeholder="เช่น 18.5">
+        <input id="fStd" type="number" min="0.1" step="0.1" placeholder="เช่น 18.5" autocomplete="off">
         <div class="hint" id="stdHint"></div>
       </div>
 
@@ -313,7 +313,7 @@
 </div>
 
 <script>
-(function(){  const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbwn_frgQ-sLu-lvEyBWEqG1nnv60lUYa2m95qtYZbGH9571RkyuVaeld4gNbp96-j19ig/exec';
+(function(){  const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbxOxYlXbtRgzd_ylnsjQaDFqRBXAmo3orFsaJDutulAGnMva_kW-whkUjADgLivgOT6eg/exec';
 
   /* =========================================================
      MASTER DATA — Job+Suffix -> Item, Item -> STD cycle time
@@ -587,11 +587,19 @@ let state = 'idle';
     });
   }
 
+  function clearFieldValues(){
+    fJob.value=''; fSuffix.value=''; fItem.value=''; fMachine.value=''; fEmployee.value=''; fStd.value='';
+  }
+
   function resetFormFields(){
+    // เอาโฟกัส/ปิดคีย์บอร์ดมือถือออกจากช่องก่อน กัน IME เขียนค่าทับกลับหลังเคลียร์
+    if(document.activeElement && formFields.indexOf(document.activeElement) !== -1){
+      document.activeElement.blur();
+    }
     clearInterval(window._cycleTick);
     sessionActive=false;
     startTime=0;pausedAt=0;pausedTotal=0;elapsed=0;
-    fJob.value=''; fSuffix.value=''; fItem.value=''; fMachine.value=''; fEmployee.value=''; fStd.value='';
+    clearFieldValues();
     clockEl.innerHTML='00:00<span class="ds">.0</span>';
     livePcsEl.innerHTML='0<small> pcs</small>';
     liveRateEl.innerHTML='—<small> pcs/hr</small>';
@@ -607,6 +615,8 @@ let state = 'idle';
     fItem.classList.remove('auto-filled'); fStd.classList.remove('auto-filled');
     updateJobTag();
     setGauge(0);
+    // เคลียร์ซ้ำอีกรอบหลัง event loop ถัดไป เผื่อคีย์บอร์ด/autofill เขียนค่าเก่ากลับมาแทรก
+    setTimeout(()=>{ clearFieldValues(); updateJobTag(); }, 80);
   }
 
   btnStart.addEventListener('click',()=>{
@@ -695,6 +705,9 @@ let state = 'idle';
     result=null;
     resetFormFields();
     renderResult();
+    // ยืนยันด้วยสายตาว่า Reset ทำงานจริง (เผื่อ debug บนมือถือ)
+    btnReset.textContent = '✓ ล้างข้อมูลแล้ว';
+    setTimeout(()=>{ btnReset.textContent = '⟲ จบงาน / เริ่มงานใหม่ (Reset)'; }, 1200);
   });
 
   btnExport.addEventListener('click',()=>{
