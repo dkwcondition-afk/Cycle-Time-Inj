@@ -42,32 +42,32 @@
       <div class="row2">
         <div class="field">
           <label for="fJob">Job</label>
-          <input id="fJob" type="text" placeholder="เช่น J-1042" list="jobList" autocomplete="off">
+          <input id="fJob" type="text" placeholder="เช่น J-1042" list="jobList" autocomplete="off" readonly>
           <datalist id="jobList"></datalist>
         </div>
         <div class="field">
           <label for="fSuffix">Suffix</label>
-          <input id="fSuffix" type="text" placeholder="เช่น A" autocomplete="off">
+          <input id="fSuffix" type="text" placeholder="เช่น A" autocomplete="off" readonly>
         </div>
       </div>
       <div class="field">
         <label for="fItem">Item (Auto)</label>
-        <input id="fItem" type="text" placeholder="พิมพ์ Job + Suffix เพื่อดึงชื่อชิ้นงานอัตโนมัติ" autocomplete="off">
+        <input id="fItem" type="text" placeholder="พิมพ์ Job + Suffix เพื่อดึงชื่อชิ้นงานอัตโนมัติ" autocomplete="off" readonly>
         <div class="hint" id="itemHint"></div>
       </div>
       <div class="row2">
         <div class="field">
           <label for="fMachine">Machine</label>
-          <input id="fMachine" type="text" placeholder="เช่น IMM-05" autocomplete="off">
+          <input id="fMachine" type="text" placeholder="เช่น IMM-05" autocomplete="off" readonly>
         </div>
         <div class="field">
           <label for="fEmployee">Employee</label>
-          <input id="fEmployee" type="text" placeholder="ชื่อพนักงาน" autocomplete="off">
+          <input id="fEmployee" type="text" placeholder="ชื่อพนักงาน" autocomplete="off" readonly>
         </div>
       </div>
       <div class="field std">
         <label for="fStd">Cycle Time STD (วินาที/ชิ้น) — Auto</label>
-        <input id="fStd" type="number" min="0.1" step="0.1" placeholder="เช่น 18.5" autocomplete="off">
+        <input id="fStd" type="number" min="0.1" step="0.1" placeholder="เช่น 18.5" autocomplete="off" readonly>
         <div class="hint" id="stdHint"></div>
       </div>
 
@@ -440,7 +440,7 @@ let state = 'idle';
     clearInterval(window._cycleTick);
     sessionActive=false;
     startTime=0;pausedAt=0;pausedTotal=0;elapsed=0;
-    resetGuardUntil = Date.now() + 1000; // กันเหนียว 1 วิ
+    resetGuardUntil = Date.now() + 3000; // กันเหนียว 3 วิ (กัน autofill ที่มาช้า)
     clearFieldValues();
     clockEl.innerHTML='00:00<span class="ds">.0</span>';
     livePcsEl.innerHTML='0<small> pcs</small>';
@@ -458,9 +458,12 @@ let state = 'idle';
     updateJobTag();
     setGauge(0);
     // เคลียร์ซ้ำหลายรอบในช่วงกันเหนียว เผื่อคีย์บอร์ด/autofill เขียนค่าเก่ากลับมาแทรกช้าๆ
-    [0, 60, 150, 350, 700, 1000].forEach(delay=>{
+    [0, 60, 150, 350, 700, 1200, 2000, 3000].forEach(delay=>{
       setTimeout(()=>{ clearFieldValues(); updateJobTag(); }, delay);
     });
+    // ล็อกช่องกลับเป็น readonly อีกครั้งสำหรับงานถัดไป กัน autofill เติมกลับมา
+    armReadonlyGuard();
+    formFields.forEach(f=> disarmOnInteract(f));
   }
 
   // ระหว่างช่วงกันเหนียวหลัง Reset ถ้ามี event 'input' ยิงเข้ามาแบบไม่คาดคิด
@@ -473,6 +476,22 @@ let state = 'idle';
       }
     }, true); // capture phase = ทำงานก่อน listener อื่นๆ ของ field นี้
   });
+
+  // ============================================================
+  // ทุกช่องเริ่มต้นเป็น readonly เพื่อกัน "Autofill" ระดับระบบของ
+  // Android/Chrome ไม่ให้เติมข้อมูลเก่ากลับมาเองตอนโหลดหน้า —
+  // พอผู้ใช้แตะ/โฟกัสช่องจริงๆ ค่อยปลด readonly ให้พิมพ์ได้ตามปกติ
+  // ============================================================
+  function armReadonlyGuard(){
+    formFields.forEach(f=>{ f.setAttribute('readonly',''); });
+  }
+  function disarmOnInteract(f){
+    const unlock=()=>{ f.removeAttribute('readonly'); };
+    f.addEventListener('focus', unlock, { once:true });
+    f.addEventListener('touchstart', unlock, { once:true, passive:true });
+    f.addEventListener('mousedown', unlock, { once:true });
+  }
+  formFields.forEach(f=> disarmOnInteract(f));
 
   btnStart.addEventListener('click',()=>{
     if(!sessionActive){
@@ -580,6 +599,33 @@ let state = 'idle';
 
   setStatus('idle');
   updateClock();
+
+  // ============================================================
+  // กันเบราว์เซอร์มือถือ (โดยเฉพาะ Chrome) "จำ" ค่าฟอร์มเก่าแล้วเติม
+  // กลับมาเองตอนโหลด/รีเฟรชหน้า หรือตอนสลับแอปแล้วกลับมาหน้านี้
+  // (คนละกรณีกับตอนกด Reset — นี่คือพฤติกรรมของเบราว์เซอร์เอง)
+  // ============================================================
+  function forceEmptyOnLoad(){
+    if(sessionActive) return; // ถ้ากำลังจับเวลาอยู่ไม่ต้องไปยุ่ง
+    resetGuardUntil = Date.now() + 3000; // OS-level autofill บาง device มาช้ากว่า 1 วิ
+    armReadonlyGuard();
+    formFields.forEach(f=> disarmOnInteract(f));
+    clearFieldValues();
+    updateJobTag();
+    [0, 60, 150, 350, 700, 1200, 2000, 3000].forEach(delay=>{
+      setTimeout(()=>{
+        if(sessionActive) return;
+        clearFieldValues();
+        updateJobTag();
+      }, delay);
+    });
+  }
+  // ตอนโหลดหน้าครั้งแรก (เผื่อเบราว์เซอร์เติมค่าก่อน DOMContentLoaded/script รัน)
+  window.addEventListener('DOMContentLoaded', forceEmptyOnLoad);
+  // ตอนกลับมาที่หน้านี้จาก back-forward cache ของเบราว์เซอร์ (สลับแอป/กดย้อนกลับ)
+  window.addEventListener('pageshow', forceEmptyOnLoad);
+  // เผื่อบางเบราว์เซอร์เติมค่าช้ากว่านั้นอีกหลังโหลดเสร็จ
+  window.addEventListener('load', forceEmptyOnLoad);
 })();
 </script>
 </body>
