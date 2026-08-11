@@ -240,8 +240,8 @@ let state = 'idle';
   let stdAutoFilled = false;
 
   const el = id => document.getElementById(id);
-  const fJob=el('fJob'), fSuffix=el('fSuffix'), fItem=el('fItem'),
-        fMachine=el('fMachine'), fEmployee=el('fEmployee'), fStd=el('fStd');  const formFields = [fJob, fSuffix, fItem, fMachine, fEmployee, fStd];
+  let fJob=el('fJob'), fSuffix=el('fSuffix'), fItem=el('fItem'),
+        fMachine=el('fMachine'), fEmployee=el('fEmployee'), fStd=el('fStd');  let formFields = [fJob, fSuffix, fItem, fMachine, fEmployee, fStd];
   const jobList = el('jobList'), itemHint = el('itemHint'), stdHint = el('stdHint');
 
   const btnStart=el('btnStart'), btnPause=el('btnPause'), btnStop=el('btnStop'),
@@ -299,7 +299,7 @@ let state = 'idle';
   fJob.addEventListener('input', autoFillFromJob);
   fSuffix.addEventListener('input', autoFillFromJob);
 
-  fItem.addEventListener('input', ()=>{
+  function onItemInput(){
     fItem.classList.remove('auto-filled');
     const typed = fItem.value.trim().toLowerCase();
     const found = Object.values(MASTER_DATA).find(v=>v.item.toLowerCase()===typed);
@@ -312,7 +312,8 @@ let state = 'idle';
       stdHint.textContent = typed ? 'ไม่พบ STD ของ Item นี้ — กรุณากรอกเอง' : '';
     }
     updateJobTag();
-  });
+  }
+  fItem.addEventListener('input', onItemInput);
 
   function setStatus(s){
     state=s;
@@ -423,25 +424,64 @@ let state = 'idle';
   function clearFieldValues(){
     formFields.forEach(f=>{
       f.value='';
-      // เคลียร์ defaultValue ด้วย กัน browser/keyboard บางรุ่นดึงค่าจำไว้กลับมาใส่คืน
       try{ f.defaultValue=''; }catch(e){}
     });
   }
 
-  // ช่วงเวลาหลังกด Reset ที่จะ "บล็อค" ค่าเก่าที่คีย์บอร์ดมือถือ/autofill
-  // อาจยิง event เขียนกลับมาช้าๆ (พบบ่อยบน Android/Gboard/Samsung Keyboard)
-  let resetGuardUntil = 0;
+  // ============================================================
+  // ทุกช่องเริ่มต้น/หลัง Reset จะเป็น readonly กัน Autofill ของระบบ
+  // Android/Chrome ไม่ให้เติมข้อมูลเก่ากลับมาเอง — พอผู้ใช้แตะช่องจริงๆ
+  // ค่อยปลด readonly ให้พิมพ์ได้ตามปกติ
+  // ============================================================
+  function disarmOnInteract(f){
+    const unlock=()=>{ f.removeAttribute('readonly'); };
+    f.addEventListener('focus', unlock, { once:true });
+    f.addEventListener('touchstart', unlock, { once:true, passive:true });
+    f.addEventListener('mousedown', unlock, { once:true });
+  }
+
+  // ============================================================
+  // สร้างช่องกรอกข้อมูลใหม่ทั้งหมดจากศูนย์ (แทนที่โหนดเดิมในหน้าเว็บ)
+  // นี่คือวิธีที่ชัวร์ที่สุด: element ใหม่ไม่มีทางมีค่าจาก Autofill ติดมา
+  // ไม่ว่า Autofill จะเติมค่าด้วยวิธีไหนก็ตาม เพราะ .value ที่ autofill
+  // ตั้งให้เป็นแค่ property ชั่วคราวของ element เก่า ไม่ใช่ attribute ใน HTML
+  // ============================================================
+  const FIELD_IDS = ['fJob','fSuffix','fItem','fMachine','fEmployee','fStd'];
+
+  function bindCommonFieldListeners(f){
+    f.addEventListener('input', updateJobTag);
+    disarmOnInteract(f);
+  }
+
+  function rebuildAllFields(){
+    FIELD_IDS.forEach(id=>{
+      const old = document.getElementById(id);
+      if(!old) return;
+      const fresh = old.cloneNode(false); // clone attributes only, ไม่มี .value ที่ autofill ตั้งไว้ติดมา
+      fresh.value = '';
+      fresh.removeAttribute('value');
+      fresh.setAttribute('readonly','');
+      fresh.classList.remove('auto-filled');
+      old.parentNode.replaceChild(fresh, old);
+    });
+    fJob=el('fJob'); fSuffix=el('fSuffix'); fItem=el('fItem');
+    fMachine=el('fMachine'); fEmployee=el('fEmployee'); fStd=el('fStd');
+    formFields=[fJob, fSuffix, fItem, fMachine, fEmployee, fStd];
+
+    formFields.forEach(f=> bindCommonFieldListeners(f));
+    fJob.addEventListener('input', autoFillFromJob);
+    fSuffix.addEventListener('input', autoFillFromJob);
+    fItem.addEventListener('input', onItemInput);
+  }
 
   function resetFormFields(){
-    // เอาโฟกัส/ปิดคีย์บอร์ดมือถือออกจากทุกช่อง ไม่ใช่แค่ช่องที่ active อยู่
     formFields.forEach(f=>{ try{ f.blur(); }catch(e){} });
     if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
 
     clearInterval(window._cycleTick);
     sessionActive=false;
     startTime=0;pausedAt=0;pausedTotal=0;elapsed=0;
-    resetGuardUntil = Date.now() + 3000; // กันเหนียว 3 วิ (กัน autofill ที่มาช้า)
-    clearFieldValues();
+    rebuildAllFields(); // ล้างช่องกรอกข้อมูลแบบสร้างใหม่ทั้งหมด กันเหนียว 100%
     clockEl.innerHTML='00:00<span class="ds">.0</span>';
     livePcsEl.innerHTML='0<small> pcs</small>';
     liveRateEl.innerHTML='—<small> pcs/hr</small>';
@@ -454,43 +494,10 @@ let state = 'idle';
     btnStart.disabled=false;btnPause.disabled=true;btnStop.disabled=true;
     btnPause.textContent='⏸ พัก (Pause)';
     itemHint.textContent=''; stdHint.textContent='';
-    fItem.classList.remove('auto-filled'); fStd.classList.remove('auto-filled');
     updateJobTag();
     setGauge(0);
-    // เคลียร์ซ้ำหลายรอบในช่วงกันเหนียว เผื่อคีย์บอร์ด/autofill เขียนค่าเก่ากลับมาแทรกช้าๆ
-    [0, 60, 150, 350, 700, 1200, 2000, 3000].forEach(delay=>{
-      setTimeout(()=>{ clearFieldValues(); updateJobTag(); }, delay);
-    });
-    // ล็อกช่องกลับเป็น readonly อีกครั้งสำหรับงานถัดไป กัน autofill เติมกลับมา
-    armReadonlyGuard();
-    formFields.forEach(f=> disarmOnInteract(f));
   }
 
-  // ระหว่างช่วงกันเหนียวหลัง Reset ถ้ามี event 'input' ยิงเข้ามาแบบไม่คาดคิด
-  // (คีย์บอร์ด/autofill พยายามเขียนค่าเก่ากลับ) ให้เคลียร์ทิ้งทันที
-  formFields.forEach(f=>{
-    f.addEventListener('input', ()=>{
-      if(Date.now() < resetGuardUntil && !sessionActive){
-        f.value='';
-        updateJobTag();
-      }
-    }, true); // capture phase = ทำงานก่อน listener อื่นๆ ของ field นี้
-  });
-
-  // ============================================================
-  // ทุกช่องเริ่มต้นเป็น readonly เพื่อกัน "Autofill" ระดับระบบของ
-  // Android/Chrome ไม่ให้เติมข้อมูลเก่ากลับมาเองตอนโหลดหน้า —
-  // พอผู้ใช้แตะ/โฟกัสช่องจริงๆ ค่อยปลด readonly ให้พิมพ์ได้ตามปกติ
-  // ============================================================
-  function armReadonlyGuard(){
-    formFields.forEach(f=>{ f.setAttribute('readonly',''); });
-  }
-  function disarmOnInteract(f){
-    const unlock=()=>{ f.removeAttribute('readonly'); };
-    f.addEventListener('focus', unlock, { once:true });
-    f.addEventListener('touchstart', unlock, { once:true, passive:true });
-    f.addEventListener('mousedown', unlock, { once:true });
-  }
   formFields.forEach(f=> disarmOnInteract(f));
 
   btnStart.addEventListener('click',()=>{
@@ -607,18 +614,8 @@ let state = 'idle';
   // ============================================================
   function forceEmptyOnLoad(){
     if(sessionActive) return; // ถ้ากำลังจับเวลาอยู่ไม่ต้องไปยุ่ง
-    resetGuardUntil = Date.now() + 3000; // OS-level autofill บาง device มาช้ากว่า 1 วิ
-    armReadonlyGuard();
-    formFields.forEach(f=> disarmOnInteract(f));
-    clearFieldValues();
+    rebuildAllFields();
     updateJobTag();
-    [0, 60, 150, 350, 700, 1200, 2000, 3000].forEach(delay=>{
-      setTimeout(()=>{
-        if(sessionActive) return;
-        clearFieldValues();
-        updateJobTag();
-      }, delay);
-    });
   }
   // ตอนโหลดหน้าครั้งแรก (เผื่อเบราว์เซอร์เติมค่าก่อน DOMContentLoaded/script รัน)
   window.addEventListener('DOMContentLoaded', forceEmptyOnLoad);
